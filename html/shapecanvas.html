@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lab1</title>
+    <style>
+        #controls {
+            margin-top: 10px;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            text-align: center;
+        }
+        button {
+            margin: 5px;
+        }
+        #color-input {
+            margin: 5px;
+        }
+        canvas {
+            padding-left: 0;
+            padding-right: 0;
+            margin-left: auto;
+            margin-right: auto;
+            display: block;
+            width: 500px;
+            height: 500px;
+        }
+    </style>
+    <canvas id="webgl-canvas" width="500" height="500"></canvas>
+</head>
+<body>
+<div id="controls">
+    <button onclick="setShape('p')">Point</button>
+    <button onclick="setShape('l')">Line</button>
+    <button onclick="setShape('t')">Triangle</button>
+    <button onclick="setShape('r')">Rectangle</button>
+    <button onclick="setShape('d')">Disk</button>
+    <button onclick="setColor([1, 0, 0, 1])">Red</button>
+    <button onclick="setColor([0, 1, 0, 1])">Green</button>
+    <button onclick="setColor([0, 0, 1, 1])">Blue</button>
+    <input id="color-input" type="text" placeholder="Enter RGB (e.g., 255,0,0)">
+    <button onclick="setCustomColor()">Set Custom Color</button>
+    <button onclick="clearCanvas()">Clear</button>
+</div>
+<script>
+const vertexShaderSource = `
+    attribute vec2 aPosition;
+    uniform vec2 dim;
+    vec2 transformedPosition;
+    attribute vec4 aColor;
+    varying vec4 fColor;
+
+    void main() {
+        fColor = aColor;
+        transformedPosition =(vec2(2.0,-2.0) * aPosition) / dim + vec2(-1.0,1.0);
+        gl_Position = vec4(transformedPosition, 0.0, 1.0); 
+        gl_PointSize = 5.0;
+    }
+`;
+</script>
+<script>
+const fragmentShaderSource = `
+    precision mediump float;
+    varying vec4 fColor;
+
+    void main() {
+        gl_FragColor = fColor; 
+    }
+`;
+</script>
+<script type="text/javascript" src="setupShader.js"></script>
+
+<script>
+
+// Button functions
+function setShape(shape) {
+    currentShape = shape;
+}
+function setColor(color) {
+    currentColor = color;
+}
+function setCustomColor() {
+    const colorInput = document.getElementById('color-input').value;
+    const rgb = colorInput.split(',').map(Number);
+    if (rgb.length === 3 && rgb.every(c => c >= 0 && c <= 255)) {
+        currentColor = [rgb[0] / 255, rgb[1] / 255, rgb[2] / 255, 1];
+    } else {
+        alert('Please enter valid RGB values between 0 and 255');
+    }
+}
+function clearCanvas() {
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    
+    // Clear addPoint data
+    point_colors.length = 0;
+    vertices.length = 0;
+    numPoints = 0;
+
+    // Clear addLine data
+    line_colors.length = 0;
+    numLinePoints = 0;
+    line_vertices.length = 0;   
+    
+    // Clear addTriangle data
+    triangle_colors.length = 0;
+    numTrianglePoints = 0;
+    triangle_vertices.length = 0;
+
+    // Clear addRectangle data
+    rectangle_colors.length = 0;
+    rectangle_vertices.length = 0;
+
+    // Clear addDisk data
+    disk_colors.length = 0;
+    disk_vertices.length = 0;
+
+}
+
+// Pass Canvas Dimensions to Shader
+const dimLocation = gl.getUniformLocation(program, 'dim');
+gl.uniform2f(dimLocation, canvas.width, canvas.height);
+
+// Init Position buffer object
+const positionBuffer = gl.createBuffer();
+const aPositionLocation = gl.getAttribLocation(program, 'aPosition');
+gl.enableVertexAttribArray(aPositionLocation);
+
+// Init color buffer object
+const colorBuffer = gl.createBuffer();
+const aColorLocation = gl.getAttribLocation(program, 'aColor');
+gl.enableVertexAttribArray(aColorLocation);
+
+// Defaults
+let currentShape = 'p';
+let currentColor = [1, 0, 0, 1];
+
+// Point trackers
+let numPoints = 0;
+let numLinePoints = 0;
+let numTrianglePoints = 0;
+
+// addPoint arrays
+const point_colors = [];
+const vertices = [];
+
+// addLine arrays
+const line_colors = [];
+const line_vertices = [];
+
+// addTriangle arrays
+const triangle_colors = [];
+const triangle_vertices = [];
+
+// addRectangle arrays
+const rectangle_colors = [];
+const rectangle_vertices = [];
+
+// addDisc arrays
+const disk_colors = [];
+const disk_vertices = [];
+
+function addPoint(x, y) {
+    vertices.push(x, y);
+    point_colors.push(...currentColor);
+    numPoints ++;
+}
+
+function addLine(x, y) {
+    line_vertices.push(x, y);
+    line_colors.push(...currentColor);
+    numLinePoints++;
+    if (numLinePoints === 2) {
+        numLinePoints = 0;
+    }  
+}
+
+function addTriangle(x, y) {
+    triangle_vertices.push(x, y);
+    triangle_colors.push(...currentColor);
+    numTrianglePoints++;
+    if (numTrianglePoints === 3) {
+        numTrianglePoints = 0;
+    }
+}
+
+function addRectangle(x, y) {
+    const size = 20;
+    rectangle_vertices.push(
+        x - size, y - size,
+        x - size, y + size,
+        x + size, y - size,
+        x - size, y + size,
+        x + size, y - size,
+        x + size, y + size
+    );
+    for (let i = 0; i < 6; i++) {
+        rectangle_colors.push(...currentColor);
+    }
+}
+
+function addDisk(x, y) {
+    const radius = 20;
+    const numSegments = 50;
+
+    for (let i = 0; i <= numSegments; i++) {
+        // Center vertex
+        disk_vertices.push(x, y);
+        disk_colors.push(...currentColor);
+
+        // Grab the first angle
+        const angle1 = (i / numSegments) * 2 * Math.PI;
+        const x1 = x + Math.cos(angle1) * radius;
+        const y1 = y + Math.sin(angle1) * radius;
+        disk_vertices.push(x1, y1);
+        disk_colors.push(...currentColor);
+        
+        // Grab the second angle
+        const angle2 = ((i + 1)/ numSegments) * 2 * Math.PI;
+        const x2 = x + Math.cos(angle2) * radius;
+        const y2 = y + Math.sin(angle2) * radius;
+        disk_vertices.push(x2, y2);
+        disk_colors.push(...currentColor);
+    }
+}
+
+function draw() {
+    gl.clearColor(1, 1, 0.75, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    //const colorLocation = gl.getUniformLocation(program, 'vColor');
+    //gl.uniform4fv(colorLocation, currentColor);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.vertexAttribPointer(aPositionLocation, 2, gl.FLOAT, false, 0, 0);
+
+    // addPoint
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+    gl.vertexAttribPointer(aPositionLocation, 2, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(point_colors), gl.STATIC_DRAW);
+    gl.vertexAttribPointer(aColorLocation, 4, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.POINTS, 0, vertices.length/2);
+
+    // addLine
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(line_vertices), gl.STATIC_DRAW);
+    gl.vertexAttribPointer(aPositionLocation, 2, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(line_colors), gl.STATIC_DRAW);
+    gl.vertexAttribPointer(aColorLocation, 4, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.LINES, 0, line_vertices.length / 2);
+
+    // addTriangle
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(triangle_vertices), gl.STATIC_DRAW);
+    gl.vertexAttribPointer(aPositionLocation, 2, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(triangle_colors), gl.STATIC_DRAW);
+    gl.vertexAttribPointer(aColorLocation, 4, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, triangle_vertices.length / 2);
+
+    // addRectangle
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(rectangle_vertices), gl.STATIC_DRAW);
+    gl.vertexAttribPointer(aPositionLocation, 2, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(rectangle_colors), gl.STATIC_DRAW);
+    gl.vertexAttribPointer(aColorLocation, 4, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, rectangle_vertices.length / 2);
+
+    // addDisk
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(disk_vertices), gl.STATIC_DRAW);
+    gl.vertexAttribPointer(aPositionLocation, 2, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(disk_colors), gl.STATIC_DRAW);
+    gl.vertexAttribPointer(aColorLocation, 4, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, disk_vertices.length / 2);
+}
+
+// Mouse click event handler
+canvas.addEventListener('mousedown', (event) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+
+    switch (currentShape) {
+        case 'p':
+            addPoint(x, y);
+            break;
+        case 'l':
+            addLine(x, y);
+            break;
+        case 't':
+            addTriangle(x, y);
+            break;
+        case 'r':
+            addRectangle(x, y);
+            break;
+        case 'd':
+            addDisk(x, y);
+            break;
+    }
+    draw();
+});
+
+// Clear the canvas
+gl.viewport(0, 0, canvas.width, canvas.height);
+gl.clearColor(1, 1, 0.75, 1);
+gl.clear(gl.COLOR_BUFFER_BIT);
+</script>
+</body>
+</html>
